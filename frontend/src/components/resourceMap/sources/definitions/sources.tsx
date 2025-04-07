@@ -1,5 +1,6 @@
 import { Icon } from '@iconify/react';
-import { useMemo } from 'react';
+import React, { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import ConfigMap from '../../../../lib/k8s/configMap';
 import CRD from '../../../../lib/k8s/crd';
 import CronJob from '../../../../lib/k8s/cronJob';
@@ -9,7 +10,7 @@ import Endpoints from '../../../../lib/k8s/endpoints';
 import Ingress from '../../../../lib/k8s/ingress';
 import IngressClass from '../../../../lib/k8s/ingressClass';
 import Job from '../../../../lib/k8s/job';
-import { KubeObjectClass } from '../../../../lib/k8s/KubeObject';
+import { KubeObject, KubeObjectClass } from '../../../../lib/k8s/KubeObject';
 import MutatingWebhookConfiguration from '../../../../lib/k8s/mutatingWebhookConfiguration';
 import NetworkPolicy from '../../../../lib/k8s/networkpolicy';
 import PersistentVolumeClaim from '../../../../lib/k8s/persistentVolumeClaim';
@@ -23,7 +24,16 @@ import ServiceAccount from '../../../../lib/k8s/serviceAccount';
 import StatefulSet from '../../../../lib/k8s/statefulSet';
 import ValidatingWebhookConfiguration from '../../../../lib/k8s/validatingWebhookConfiguration';
 import { useNamespaces } from '../../../../redux/filterSlice';
-import { GraphSource } from '../../graph/graphModel';
+import {
+  ConditionsTable,
+  MainInfoSection,
+  ObjectEventList,
+  PageGrid,
+  SectionBox,
+} from '../../../common';
+import Loader from '../../../common/Loader';
+import DetailsViewSection from '../../../DetailsViewSection';
+import { GraphNode, GraphSource } from '../../graph/graphModel';
 import { getKindGroupColor, KubeIcon } from '../../kubeIcon/KubeIcon';
 import { makeKubeObjectNode } from '../GraphSources';
 
@@ -41,12 +51,50 @@ const makeKubeSource = (cl: KubeObjectClass): GraphSource => ({
   },
 });
 
+/**
+ * Create an object from any Kube object that is able to render Custom Resource basic information.
+ */
+export const makeCRKubeObjectNode = (obj: KubeObject): GraphNode => {
+  return {
+    id: obj.metadata.uid,
+    kubeObject: obj,
+    detailsComponent: ({ node }) => {
+      const { t } = useTranslation(['glossary', 'translation']);
+      const item = node.kubeObject;
+      return !item ? (
+        <Loader title={t('translation|Loading resource definition details')} />
+      ) : (
+        <PageGrid>
+          <MainInfoSection resource={item} />
+          <SectionBox title={t('translation|Conditions')}>
+            <ConditionsTable resource={item.jsonData} showLastUpdate />
+          </SectionBox>
+          <DetailsViewSection resource={item} />
+          {item && <ObjectEventList object={item} />}
+        </PageGrid>
+      );
+    },
+  };
+};
+/**
+ * Create a GraphSource from a CR KubeObject class definition
+ */
+const makeCRKubeSource = (cl: KubeObjectClass): GraphSource => ({
+  id: cl.kind,
+  label: cl.apiName,
+  icon: <KubeIcon kind={cl.kind as any} />,
+  useData() {
+    const [items] = cl.useList({ namespace: useNamespaces() });
+    return useMemo(() => (items ? { nodes: items?.map(makeCRKubeObjectNode) } : null), [items]);
+  },
+});
+
 const generateCRSources = (crds: CRD[]): GraphSource[] => {
   const groupedSources = new Map<string, GraphSource[]>();
 
   for (const crd of crds) {
     const [group] = crd.getMainAPIGroup();
-    const source = makeKubeSource(crd.makeCRClass());
+    const source = makeCRKubeSource(crd.makeCRClass());
 
     if (!groupedSources.has(group)) {
       groupedSources.set(group, []);
@@ -69,7 +117,7 @@ const generateCRSources = (crds: CRD[]): GraphSource[] => {
 };
 
 export function getAllSources(): GraphSource[] {
-  const { items: crds } = CRD.useList({ namespace: useNamespaces() });
+  const { items: CustomResourceDefinition } = CRD.useList({ namespace: useNamespaces() });
 
   const sources = [
     {
@@ -152,7 +200,7 @@ export function getAllSources(): GraphSource[] {
     },
   ];
 
-  if (crds !== null) {
+  if (CustomResourceDefinition !== null) {
     sources.push({
       id: 'customresource',
       label: 'Custom Resources',
@@ -165,7 +213,7 @@ export function getAllSources(): GraphSource[] {
         />
       ),
       isEnabledByDefault: false,
-      sources: generateCRSources(crds),
+      sources: generateCRSources(CustomResourceDefinition),
     });
   }
 
