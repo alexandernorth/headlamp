@@ -1,6 +1,5 @@
 import { Icon } from '@iconify/react';
 import React, { useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
 import ConfigMap from '../../../../lib/k8s/configMap';
 import CRD from '../../../../lib/k8s/crd';
 import CronJob from '../../../../lib/k8s/cronJob';
@@ -24,16 +23,8 @@ import ServiceAccount from '../../../../lib/k8s/serviceAccount';
 import StatefulSet from '../../../../lib/k8s/statefulSet';
 import ValidatingWebhookConfiguration from '../../../../lib/k8s/validatingWebhookConfiguration';
 import { useNamespaces } from '../../../../redux/filterSlice';
-import {
-  ConditionsTable,
-  MainInfoSection,
-  ObjectEventList,
-  PageGrid,
-  SectionBox,
-} from '../../../common';
-import Loader from '../../../common/Loader';
-import DetailsViewSection from '../../../DetailsViewSection';
-import { GraphNode, GraphSource } from '../../graph/graphModel';
+import { CustomResourceDetails } from '../../../crd/CustomResourceDetails';
+import { GraphSource } from '../../graph/graphModel';
 import { getKindGroupColor, KubeIcon } from '../../kubeIcon/KubeIcon';
 import { makeKubeObjectNode } from '../GraphSources';
 
@@ -52,49 +43,45 @@ const makeKubeSource = (cl: KubeObjectClass): GraphSource => ({
 });
 
 /**
- * Create an object from any Kube object that is able to render Custom Resource basic information.
+ * Create a GraphSource from a CR KubeObject class definition
  */
-export const makeCRKubeObjectNode = (obj: KubeObject): GraphNode => {
+const makeCRKubeSource = (customResourceDefinition: CRD): GraphSource => {
+  const cl = customResourceDefinition.makeCRClass();
   return {
-    id: obj.metadata.uid,
-    kubeObject: obj,
-    detailsComponent: ({ node }) => {
-      const { t } = useTranslation(['glossary', 'translation']);
-      const item = node.kubeObject;
-      return !item ? (
-        <Loader title={t('translation|Loading resource definition details')} />
-      ) : (
-        <PageGrid>
-          <MainInfoSection resource={item} />
-          <SectionBox title={t('translation|Conditions')}>
-            <ConditionsTable resource={item.jsonData} showLastUpdate />
-          </SectionBox>
-          <DetailsViewSection resource={item} />
-          {item && <ObjectEventList object={item} />}
-        </PageGrid>
+    id: cl.kind,
+    label: cl.apiName,
+    icon: <KubeIcon kind={cl.kind as any} />,
+    useData() {
+      const [items] = cl.useList({ namespace: useNamespaces() });
+      return useMemo(
+        () =>
+          items
+            ? {
+                nodes: items?.map((obj: KubeObject) => ({
+                  id: obj.metadata.uid,
+                  kubeObject: obj,
+                  detailsComponent: () => (
+                    <CustomResourceDetails
+                      crName={obj.getName()}
+                      crd={customResourceDefinition.getName()}
+                      namespace={obj.getNamespace() ?? ''}
+                    />
+                  ),
+                })),
+              }
+            : null,
+        [items]
       );
     },
   };
 };
-/**
- * Create a GraphSource from a CR KubeObject class definition
- */
-const makeCRKubeSource = (cl: KubeObjectClass): GraphSource => ({
-  id: cl.kind,
-  label: cl.apiName,
-  icon: <KubeIcon kind={cl.kind as any} />,
-  useData() {
-    const [items] = cl.useList({ namespace: useNamespaces() });
-    return useMemo(() => (items ? { nodes: items?.map(makeCRKubeObjectNode) } : null), [items]);
-  },
-});
 
 const generateCRSources = (crds: CRD[]): GraphSource[] => {
   const groupedSources = new Map<string, GraphSource[]>();
 
   for (const crd of crds) {
     const [group] = crd.getMainAPIGroup();
-    const source = makeCRKubeSource(crd.makeCRClass());
+    const source = makeCRKubeSource(crd);
 
     if (!groupedSources.has(group)) {
       groupedSources.set(group, []);
