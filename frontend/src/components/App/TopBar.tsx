@@ -1,3 +1,19 @@
+/*
+ * Copyright 2025 The Kubernetes Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 import { Icon } from '@iconify/react';
 import AppBar from '@mui/material/AppBar';
 import Box from '@mui/material/Box';
@@ -14,7 +30,7 @@ import React, { memo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch } from 'react-redux';
 import { useHistory, useLocation } from 'react-router-dom';
-import helpers from '../../helpers';
+import { getProductName, getVersion } from '../../helpers/getProductInfo';
 import { getToken, setToken } from '../../lib/auth';
 import { useCluster, useClustersConf } from '../../lib/k8s';
 import { createRouteURL } from '../../lib/router';
@@ -24,8 +40,8 @@ import {
   AppBarActionType,
   DefaultAppBarAction,
 } from '../../redux/actionButtonsSlice';
-import { setVersionDialogOpen } from '../../redux/actions/actions';
 import { useTypedSelector } from '../../redux/reducers/reducers';
+import { uiSlice } from '../../redux/uiSlice';
 import { SettingsButton } from '../App/Settings';
 import { ClusterTitle } from '../cluster/Chooser';
 import ErrorBoundary from '../common/ErrorBoundary';
@@ -288,7 +304,7 @@ export const PureTopBar = memo(
         <MenuItem
           component="a"
           onClick={() => {
-            dispatch(setVersionDialogOpen(true));
+            dispatch(uiSlice.actions.setVersionDialogOpen(true));
             handleMenuClose();
           }}
         >
@@ -296,7 +312,7 @@ export const PureTopBar = memo(
             <Icon icon="mdi:information-outline" />
           </ListItemIcon>
           <ListItemText>
-            {helpers.getProductName()} {helpers.getVersion()['VERSION']}
+            {getProductName()} {getVersion()['VERSION']}
           </ListItemText>
         </MenuItem>
       </Menu>
@@ -368,11 +384,7 @@ export const PureTopBar = memo(
       {
         id: DefaultAppBarAction.CLUSTER,
         action: (
-          <Box
-            sx={theme => ({
-              paddingRight: theme.spacing(10),
-            })}
-          >
+          <Box>
             <ClusterTitle cluster={cluster} clusters={clusters} onClick={handleMobileMenuClose} />
           </Box>
         ),
@@ -413,11 +425,15 @@ export const PureTopBar = memo(
         <AppBar
           position="static"
           sx={theme => ({
+            backgroundImage: 'none',
             zIndex: theme.zIndex.drawer + 1,
-            '& > *': {
-              color: theme.palette.text.primary,
-            },
-            backgroundColor: theme.palette.background.default,
+            color:
+              theme.palette.navbar.color ??
+              theme.palette.getContrastText(theme.palette.navbar.background),
+            backgroundColor: theme.palette.navbar.background,
+            boxShadow: 'none',
+            borderBottom: '1px solid #eee',
+            borderColor: theme.palette.divider,
           })}
           elevation={1}
           component="nav"

@@ -1,3 +1,19 @@
+/*
+ * Copyright 2025 The Kubernetes Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 import '../../../i18n/config';
 import Editor, { loader } from '@monaco-editor/react';
 import Box from '@mui/material/Box';
@@ -17,7 +33,6 @@ import { useDispatch } from 'react-redux';
 import { getCluster } from '../../../lib/cluster';
 import { apply } from '../../../lib/k8s/apiProxy';
 import { KubeObjectInterface } from '../../../lib/k8s/KubeObject';
-import { getThemeName } from '../../../lib/themes';
 import { useId } from '../../../lib/util';
 import { clusterAction } from '../../../redux/clusterActionSlice';
 import {
@@ -26,6 +41,7 @@ import {
   useEventCallback,
 } from '../../../redux/headlampEventSlice';
 import { AppDispatch } from '../../../redux/stores/store';
+import { useCurrentAppTheme } from '../../App/themeSlice';
 import ConfirmButton from '../ConfirmButton';
 import { Dialog, DialogProps } from '../Dialog';
 import Loader from '../Loader';
@@ -76,7 +92,6 @@ export default function EditorDialog(props: EditorDialogProps) {
   };
   const { i18n } = useTranslation();
   const [lang, setLang] = React.useState(i18n.language);
-  const themeName = getThemeName();
 
   const initialCode = typeof item === 'string' ? item : yaml.dump(item || {});
   const originalCodeRef = React.useRef({ code: initialCode, format: item ? 'yaml' : '' });
@@ -91,6 +106,8 @@ export default function EditorDialog(props: EditorDialogProps) {
     KubeObjectInterface | KubeObjectInterface[] | null
   >([]);
   const { t } = useTranslation();
+
+  const theme = useCurrentAppTheme();
 
   const [useSimpleEditor, setUseSimpleEditorState] = React.useState(() => {
     const localData = localStorage.getItem('useSimpleEditor');
@@ -280,7 +297,8 @@ export default function EditorDialog(props: EditorDialogProps) {
                 apiVersion,
               });
             }
-            setError(msg);
+            const errorDetail = value.reason?.message || msg;
+            setError(errorDetail);
             setOpen?.(true);
             // throw msg;
             throw new Error(msg);
@@ -350,7 +368,7 @@ export default function EditorDialog(props: EditorDialogProps) {
     }
 
     return useSimpleEditor ? (
-      <Box paddingTop={2} height="100%">
+      <Box height="100%">
         <SimpleEditor
           language={originalCodeRef.current.format || 'yaml'}
           value={code.code}
@@ -358,10 +376,10 @@ export default function EditorDialog(props: EditorDialogProps) {
         />
       </Box>
     ) : (
-      <Box paddingTop={2} height="100%">
+      <Box height="100%">
         <Editor
           language={originalCodeRef.current.format || 'yaml'}
-          theme={themeName === 'dark' ? 'vs-dark' : 'light'}
+          theme={theme.base === 'dark' ? 'vs-dark' : 'light'}
           value={code.code}
           options={editorOptions}
           onChange={onChange}
@@ -476,6 +494,7 @@ export default function EditorDialog(props: EditorDialogProps) {
               <ConfirmButton
                 disabled={originalCodeRef.current.code === code.code}
                 color="secondary"
+                variant="contained"
                 aria-label={t('translation|Undo')}
                 onConfirm={onUndo}
                 confirmTitle={t('translation|Are you sure?')}
@@ -490,13 +509,14 @@ export default function EditorDialog(props: EditorDialogProps) {
             <div style={{ flex: '1 0 0' }} />
             {errorLabel && <Typography color="error">{errorLabel}</Typography>}
             <div style={{ flex: '1 0 0' }} />
-            <Button onClick={onClose} color="primary">
+            <Button onClick={onClose} color="secondary" variant="contained">
               {t('translation|Close')}
             </Button>
             {!isReadOnly() && (
               <Button
                 onClick={handleSave}
                 color="primary"
+                variant="contained"
                 disabled={originalCodeRef.current.code === code.code || !!error}
                 // @todo: aria-controls should point to the textarea id
               >

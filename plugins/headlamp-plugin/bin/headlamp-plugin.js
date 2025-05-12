@@ -1,4 +1,21 @@
 #!/usr/bin/env node
+
+/*
+ * Copyright 2025 The Kubernetes Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 // @ts-check
 'use strict';
 
@@ -15,6 +32,7 @@ const headlampPluginPkg = require('../package.json');
 const PluginManager = require('../plugin-management/plugin-management').PluginManager;
 const { table } = require('table');
 const tar = require('tar');
+const MultiPluginManager = require('../plugin-management/multi-plugin-management');
 
 // ES imports
 const viteCopyPluginPromise = import('vite-plugin-static-copy');
@@ -230,6 +248,63 @@ async function calculateChecksum(filePath) {
 }
 
 /**
+ * Copy extra files specified in package.json to the dist folder
+ *
+ * @param {string} [packagePath='.'] - Path to the package root containing package.json
+ * @returns {Promise<void>}
+ */
+async function copyExtraDistFiles(packagePath = '.') {
+  try {
+    const packageJsonPath = path.join(packagePath, 'package.json');
+    if (!fs.existsSync(packageJsonPath)) {
+      return; // No package.json, nothing to do
+    }
+
+    const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+    if (!packageJson.headlamp || !packageJson.headlamp.extraDist) {
+      return; // No extra files to copy
+    }
+
+    const extraDist = packageJson.headlamp.extraDist;
+    const distFolder = path.resolve(packagePath, 'dist');
+
+    // Create dist folder if it doesn't exist (although it should by this point)
+    if (!fs.existsSync(distFolder)) {
+      fs.mkdirSync(distFolder, { recursive: true });
+    }
+
+    // Process all entries in extraDist
+    for (const [target, source] of Object.entries(extraDist)) {
+      const targetPath = path.join(distFolder, target);
+      const sourcePath = path.resolve(packagePath, source);
+
+      // Skip if source doesn't exist
+      if (!fs.existsSync(sourcePath)) {
+        console.warn(`Warning: extraDist source "${sourcePath}" does not exist, skipping.`);
+        continue;
+      }
+
+      // Create target directory if needed
+      fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+
+      // Copy based on whether it's a directory or file
+      const sourceStats = fs.statSync(sourcePath);
+      if (sourceStats.isDirectory()) {
+        console.log(`Copying extra directory "${sourcePath}" to "${targetPath}"`);
+        fs.copySync(sourcePath, targetPath);
+      } else {
+        console.log(`Copying extra file "${sourcePath}" to "${targetPath}"`);
+        fs.copyFileSync(sourcePath, targetPath);
+      }
+    }
+
+    console.log('Successfully copied extra dist files');
+  } catch (error) {
+    console.error('Error copying extra dist files:', error);
+  }
+}
+
+/**
  * Creates a tarball of the plugin package. The tarball is placed in the outputFolderPath.
  * It moves files from:
  *   packageName/dist/main.js to packageName/main.js
@@ -274,6 +349,10 @@ async function createArchive(pluginDir, outputDir) {
 
   // Create temporary folder
   const tempFolder = fs.mkdtempSync(path.join(os.tmpdir(), 'headlamp-plugin-'));
+
+  // Make sure any extraDist files are in the dist folder before extraction
+  await copyExtraDistFiles(pluginPath);
+
   if (extract(pluginPath, tempFolder, false) !== 0) {
     console.error(
       `Error: Failed to extract plugin package to "${tempFolder}". Not creating archive.`
@@ -353,7 +432,7 @@ async function start() {
         const result = stdout.toString();
         const outdated = JSON.parse(result);
         if ('@kinvolk/headlamp-plugin' in outdated) {
-          const url = `https://github.com/headlamp-k8s/headlamp/releases`;
+          const url = `https://github.com/kubernetes-sigs/headlamp/releases`;
           console.warn(
             '    @kinvolk/headlamp-plugin is out of date. Run the following command to upgrade \n' +
               `    See release notes here: ${url}` +
@@ -374,12 +453,23 @@ async function start() {
   const config = (await viteConfigPromise).default;
   const vite = await vitePromise;
 
-  await copyToPluginsFolder(config);
-
   if (config.build) {
     config.build.watch = {};
     config.build.sourcemap = 'inline';
   }
+
+  // Add file copy hook to be executed after each build
+  if (config.plugins) {
+    config.plugins.push({
+      name: 'headlamp-copy-extra-dist',
+      buildEnd: async () => {
+        await copyExtraDistFiles();
+      },
+    });
+  }
+
+  // Then add the plugins from copyToPluginsFolder which includes ViteStaticCopy
+  await copyToPluginsFolder(config);
 
   try {
     await vite.build(config);
@@ -477,8 +567,10 @@ function runScriptOnPackages(packageFolder, scriptName, cmdLine, env) {
 
     console.log(`"${folder}": ${scriptName}-ing, :${cmdLineToUse}:...`);
 
+    const [cmd, ...args] = cmdLineToUse.split(' ');
+
     try {
-      child_process.execSync(cmdLineToUse, {
+      child_process.execFileSync(cmd, args, {
         stdio: 'inherit',
         encoding: 'utf8',
         env: { ...process.env, ...(env || {}) },
@@ -579,6 +671,10 @@ async function build(packageFolder) {
     const vite = await vitePromise;
     try {
       await vite.build(config.default);
+
+      // Copy extra dist files after successful build
+      await copyExtraDistFiles('.');
+
       console.log(`Finished building "${folder}" for production.`);
     } catch (e) {
       console.error(e);
@@ -1325,12 +1421,17 @@ yargs(process.argv.slice(2))
     }
   )
   .command(
-    'install <URL>',
-    'Install a plugin from the Artiface Hub URL',
+    'install [URL]',
+    'Install plugin(s) from a configuration file or a plugin artifact Hub URL',
     yargs => {
-      yargs
+      return yargs
         .positional('URL', {
           describe: 'URL of the plugin to install',
+          type: 'string',
+        })
+        .option('config', {
+          alias: 'c',
+          describe: 'Path to plugin configuration file',
           type: 'string',
         })
         .option('folderName', {
@@ -1345,22 +1446,66 @@ yargs(process.argv.slice(2))
           alias: 'q',
           describe: 'Do not print logs',
           type: 'boolean',
+        })
+        .check(argv => {
+          if (!argv.URL && !argv.config) {
+            throw new Error('Either URL or --config must be specified');
+          }
+          if (argv.URL && argv.config) {
+            throw new Error('Cannot specify both URL and --config');
+          }
+          return true;
         });
     },
     async argv => {
-      const { URL, folderName, headlampVersion, quiet } = argv;
-      const progressCallback = quiet
-        ? null
-        : data => {
-            if (data.type === 'error' || data.type === 'success') {
-              console.error(data.type, ':', data.message);
-            }
-          }; // Use console.log for logs if not in quiet mode
       try {
-        await PluginManager.install(URL, folderName, headlampVersion, progressCallback);
-      } catch (e) {
-        console.error(e.message);
-        process.exit(1); // Exit with error status
+        const { URL, config, folderName, headlampVersion, quiet } = argv;
+        const progressCallback = quiet
+          ? () => {}
+          : data => {
+              const { type = 'info', message, raise = true } = data;
+              if (config && !URL) {
+                // bulk installation
+                let prefix = '';
+                if (data.current || data.total || data.plugin) {
+                  prefix = `${data.current} of ${data.total} (${data.plugin}): `;
+                }
+                if (type === 'info' || type === 'success') {
+                  console.log(`${prefix}${type}: ${message}`);
+                } else if (type === 'error' && raise) {
+                  throw new Error(message);
+                } else {
+                  console.error(`${prefix}${type}: ${message}`);
+                }
+              } else {
+                if (type === 'error' || type === 'success') {
+                  console.error(`${type}: ${message}`);
+                }
+              }
+            };
+        if (URL) {
+          // Single plugin installation
+          try {
+            await PluginManager.install(URL, folderName, headlampVersion, progressCallback);
+          } catch (e) {
+            console.error(e.message);
+            process.exit(1); // Exit with error status
+          }
+        } else if (config) {
+          const installer = new MultiPluginManager(folderName, headlampVersion, progressCallback);
+          // Bulk installation from config
+          const result = await installer.installFromConfig(config);
+          // Exit with error if any plugins failed to install
+          if (result.failed > 0) {
+            process.exit(1);
+          }
+        }
+      } catch (error) {
+        console.error('Installation failed', {
+          error: error.message,
+          stack: error.stack,
+        });
+        process.exit(1);
       }
     }
   )

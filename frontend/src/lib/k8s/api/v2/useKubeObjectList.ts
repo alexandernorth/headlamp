@@ -1,6 +1,21 @@
+/*
+ * Copyright 2025 The Kubernetes Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 import { QueryObserverOptions, useQueries, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { getWebsocketMultiplexerEnabled } from '../../../../helpers';
 import { KubeObject, KubeObjectClass } from '../../KubeObject';
 import { QueryParameters } from '../v1/queryParameters';
 import { ApiError } from './ApiError';
@@ -10,6 +25,14 @@ import { KubeList, KubeListUpdateEvent } from './KubeList';
 import { KubeObjectEndpoint } from './KubeObjectEndpoint';
 import { makeUrl } from './makeUrl';
 import { BASE_WS_URL, useWebSockets, WebSocketManager } from './webSocket';
+
+/**
+ * @returns true if the websocket multiplexer is enabled.
+ * defaults to true. This is a feature flag to enable the websocket multiplexer.
+ */
+export function getWebsocketMultiplexerEnabled(): boolean {
+  return import.meta.env.REACT_APP_ENABLE_WEBSOCKET_MULTIPLEXER !== 'false';
+}
 
 /**
  * Object representing a List of Kube object
@@ -217,7 +240,7 @@ function useWatchKubeObjectListsMultiplexed<K extends KubeObject>({
           return oldResponse;
         }
 
-        const newList = KubeList.applyUpdate(oldResponse.list, update, kubeObjectClass);
+        const newList = KubeList.applyUpdate(oldResponse.list, update, kubeObjectClass, cluster);
 
         // Only update if the list actually changed
         if (newList === oldResponse.list) {
@@ -315,7 +338,12 @@ function useWatchKubeObjectListsLegacy<K extends KubeObject>({
           client.setQueryData(key, (oldResponse: ListResponse<any> | undefined | null) => {
             if (!oldResponse) return oldResponse;
 
-            const newList = KubeList.applyUpdate(oldResponse.list, update, kubeObjectClass);
+            const newList = KubeList.applyUpdate(
+              oldResponse.list,
+              update,
+              kubeObjectClass,
+              cluster
+            );
             return { ...oldResponse, list: newList };
           });
         },

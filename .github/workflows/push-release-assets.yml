@@ -15,6 +15,9 @@ on:
         required: false
         default: false
 
+permissions:
+  contents: read
+
 jobs:
   publish:
     name: Publish Assets
@@ -65,6 +68,10 @@ jobs:
         run: |
           mkdir -p ./flattened-artifacts
           find ./artifacts -type f -not -path "*/\.*" -exec cp {} ./flattened-artifacts/ \;
+
+          # Remove blockmap files if they exist
+          find ./flattened-artifacts -type f -name "*.blockmap" -exec rm {} \;
+
           echo "Files prepared for upload:"
           ls -la ./flattened-artifacts/
 

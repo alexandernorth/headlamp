@@ -1,3 +1,19 @@
+/*
+ * Copyright 2025 The Kubernetes Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 import { ChildProcessWithoutNullStreams, exec, execSync, spawn } from 'child_process';
 import { randomBytes } from 'crypto';
 import dotenv from 'dotenv';
@@ -24,7 +40,14 @@ import url from 'url';
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import i18n from './i18next.config';
-import { PluginManager } from './plugin-management';
+import {
+  addToPath,
+  ArtifactHubHeadlampPkg,
+  defaultPluginsDir,
+  getMatchingExtraFiles,
+  getPluginBinDirectories,
+  PluginManager,
+} from './plugin-management';
 import { handleRunCommand } from './runCmd';
 import windowSize from './windowSize';
 
@@ -81,6 +104,10 @@ const args = yargs(hideBin(process.argv))
     },
     'disable-gpu': {
       describe: 'Disable use of GPU. For people who may have buggy graphics drivers',
+      type: 'boolean',
+    },
+    'watch-plugins-changes': {
+      describe: 'Reloads plugins when there are changes to them or their directory',
       type: 'boolean',
     },
   })
@@ -189,7 +216,6 @@ class PluginManagerEventListeners {
     ipcMain.on('plugin-manager', async (event, data) => {
       const eventData = JSON.parse(data) as Action;
       const { identifier, action } = eventData;
-
       const updateCache = (progress: ProgressResp) => {
         const percentage = this.convertProgressToPercentage(progress);
         this.cache[identifier].progress = progress;
@@ -248,7 +274,7 @@ class PluginManagerEventListeners {
       controller,
     };
 
-    let pluginInfo;
+    let pluginInfo: ArtifactHubHeadlampPkg | undefined = undefined;
     try {
       pluginInfo = await PluginManager.fetchPluginInfo(URL, { signal: controller.signal });
     } catch (error) {
@@ -260,6 +286,12 @@ class PluginManagerEventListeners {
       return { type: 'error', message: 'Failed to fetch plugin info' };
     }
 
+    const { matchingExtraFiles } = getMatchingExtraFiles(
+      pluginInfo?.extraFiles ? pluginInfo?.extraFiles : {}
+    );
+    const extraUrls = matchingExtraFiles.map(file => file.url);
+    const allUrls = [pluginInfo.archiveURL, ...extraUrls].join(', ');
+
     const dialogOptions: MessageBoxOptions = {
       type: 'question',
       buttons: [i18n.t('Yes'), i18n.t('No')],
@@ -267,7 +299,7 @@ class PluginManagerEventListeners {
       title: i18n.t('Plugin Installation'),
       message: i18n.t('Do you want to install the plugin "{{ pluginName }}"?', { pluginName }),
       detail: i18n.t('You are about to install a plugin from: {{ url }}\nDo you want to proceed?', {
-        url: pluginInfo.archiveURL,
+        url: allUrls,
       }),
     };
 
@@ -529,7 +561,6 @@ async function getShellEnv(): Promise<NodeJS.ProcessEnv> {
     };
 
     const envVars = isEnvNull ? processLines('\0') : processLines('\n');
-
     const mergedEnv = { ...process.env, ...envVars };
     return mergedEnv;
   } catch (error) {
@@ -550,6 +581,9 @@ async function startServer(flags: string[] = []): Promise<ChildProcessWithoutNul
   const proxyUrls = !!buildManifest && buildManifest['proxy-urls'];
   if (!!proxyUrls && proxyUrls.length > 0) {
     serverArgs = serverArgs.concat(['--proxy-urls', proxyUrls.join(',')]);
+  }
+  if (args.watchPluginsChanges !== undefined) {
+    serverArgs.push(`--watch-plugins-changes=${args.watchPluginsChanges}`);
   }
 
   const bundledPlugins = path.join(process.resourcesPath, '.plugins');
@@ -894,12 +928,12 @@ function getDefaultAppMenu(): AppMenu[] {
         {
           label: i18n.t('Open an Issue'),
           id: 'original-open-issue',
-          url: 'https://github.com/headlamp-k8s/headlamp/issues',
+          url: 'https://github.com/kubernetes-sigs/headlamp/issues',
         },
         {
           label: i18n.t('About'),
           id: 'original-about',
-          url: 'https://github.com/headlamp-k8s/headlamp',
+          url: 'https://github.com/kubernetes-sigs/headlamp',
         },
       ],
     },
@@ -1322,6 +1356,19 @@ function startElecron() {
 
       serverProcess = await startServer();
       attachServerEventHandlers(serverProcess);
+    }
+
+    // Also add bundled plugin bin directories to PATH
+    const bundledPlugins = path.join(process.resourcesPath, '.plugins');
+    const bundledPluginBinDirs = getPluginBinDirectories(bundledPlugins);
+    if (bundledPluginBinDirs.length > 0) {
+      addToPath(bundledPluginBinDirs, 'bundled plugin');
+    }
+
+    // Add the installed plugins as well
+    const userPluginBinDirs = getPluginBinDirectories(defaultPluginsDir());
+    if (userPluginBinDirs.length > 0) {
+      addToPath(userPluginBinDirs, 'userPluginBinDirs plugin');
     }
 
     // Finally load the frontend

@@ -1,3 +1,19 @@
+/*
+ * Copyright 2025 The Kubernetes Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 import { Icon } from '@iconify/react';
 import Autocomplete from '@mui/material/Autocomplete';
 import Box from '@mui/material/Box';
@@ -9,11 +25,52 @@ import React, { useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch } from 'react-redux';
 import { useHistory, useLocation } from 'react-router-dom';
-import helpers, { addQuery } from '../../helpers';
+import { loadClusterSettings } from '../../helpers/clusterSettings';
 import { useCluster, useClustersConf } from '../../lib/k8s';
 import Namespace from '../../lib/k8s/namespace';
 import { setNamespaceFilter } from '../../redux/filterSlice';
 import { useTypedSelector } from '../../redux/reducers/reducers';
+
+/**
+ * addQuery will add a query parameter to the URL using history API.
+ *
+ * It will also remove the parameter if the value is the same as the default value.
+ * If the tableName is provided, it will be added to the query string.
+ * @param queryObj The query object to add to the URL.
+ * @param queryParamDefaultObj The default query object to compare with.
+ * @param history The history object from react-router.
+ * @param location The location object from react-router.
+ * @param tableName The table name to add to the query string.
+ * @returns void
+ */
+function addQuery(
+  queryObj: { [key: string]: string },
+  queryParamDefaultObj: { [key: string]: string } = {},
+  history: any,
+  location: any,
+  tableName = ''
+) {
+  const pathname = location.pathname;
+  const searchParams = new URLSearchParams(location.search);
+
+  if (!!tableName) {
+    searchParams.set('tableName', tableName);
+  }
+  // Ensure that default values will not show up in the URL
+  for (const key in queryObj) {
+    const value = queryObj[key];
+    if (value !== queryParamDefaultObj[key]) {
+      searchParams.set(key, value);
+    } else {
+      searchParams.delete(key);
+    }
+  }
+
+  history.push({
+    pathname: pathname,
+    search: searchParams.toString(),
+  });
+}
 
 export interface PureNamespacesAutocompleteProps {
   namespaceNames: string[];
@@ -59,7 +116,7 @@ export function PureNamespacesAutocomplete({
       // is useful since the label is ellipsized and this we get to see it change.
       value={[...filter.namespaces.values()].reverse()}
       renderOption={(props, option, { selected }) => (
-        <li {...props}>
+        <li {...props} key={props.key}>
           <Checkbox
             icon={<Icon icon="mdi:checkbox-blank-outline" />}
             checkedIcon={<Icon icon="mdi:check-box-outline" />}
@@ -129,7 +186,7 @@ export function NamespacesAutocomplete() {
   const [namespaceNames, setNamespaceNames] = React.useState<string[]>([]);
 
   React.useEffect(() => {
-    const settings = helpers.loadClusterSettings(cluster || '');
+    const settings = loadClusterSettings(cluster || '');
     const allowedNamespaces = settings?.allowedNamespaces || [];
     if (allowedNamespaces.length > 0) {
       setNamespaceNames(allowedNamespaces);

@@ -1,3 +1,19 @@
+/*
+Copyright 2025 The Kubernetes Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package main
 
 import (
@@ -11,8 +27,8 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/headlamp-k8s/headlamp/backend/pkg/kubeconfig"
-	"github.com/headlamp-k8s/headlamp/backend/pkg/logger"
+	"github.com/kubernetes-sigs/headlamp/backend/pkg/kubeconfig"
+	"github.com/kubernetes-sigs/headlamp/backend/pkg/logger"
 	"k8s.io/client-go/rest"
 )
 
@@ -343,18 +359,17 @@ func (m *Multiplexer) dialWebSocket(
 		HandshakeTimeout: HandshakeTimeout,
 	}
 
+	headers := http.Header{
+		"Origin": {host},
+	}
+
 	if token != nil {
-		dialer.Subprotocols = []string{
-			"base64.binary.k8s.io",
-			"base64url.bearer.authorization.k8s.io." + base64.RawStdEncoding.EncodeToString([]byte(*token)),
-		}
+		headers.Set("Authorization", "Bearer"+*token)
 	}
 
 	conn, resp, err := dialer.Dial(
 		wsURL,
-		http.Header{
-			"Origin": {host},
-		},
+		headers,
 	)
 	if err != nil {
 		logger.Log(logger.LevelError, nil, err, "dialing WebSocket")
@@ -493,6 +508,7 @@ func (m *Multiplexer) readClientMessage(clientConn *websocket.Conn) (Message, er
 }
 
 // getOrCreateConnection gets an existing connection or creates a new one if it doesn't exist.
+// If a connection exists and a new token is provided, it updates the token to ensure it's fresh.
 func (m *Multiplexer) getOrCreateConnection(msg Message, clientConn *WSConnLock) (*Connection, error) {
 	connKey := m.createConnectionKey(msg.ClusterID, msg.Path, msg.UserID)
 
@@ -516,6 +532,14 @@ func (m *Multiplexer) getOrCreateConnection(msg Message, clientConn *WSConnLock)
 		}
 
 		go m.handleClusterMessages(conn, clientConn)
+	} else if msg.Token != nil {
+		// Check if the token is different before updating
+		conn.mu.Lock()
+		if conn.Token == nil || *conn.Token != *msg.Token {
+			// Update the token only if it's new
+			conn.Token = msg.Token
+		}
+		conn.mu.Unlock()
 	}
 
 	return conn, nil

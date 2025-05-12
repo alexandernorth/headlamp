@@ -34,6 +34,9 @@ tools/golangci-lint: backend/go.mod backend/go.sum
 backend-lint: tools/golangci-lint
 	cd backend && ./tools/golangci-lint run
 
+backend-lint-fix: tools/golangci-lint
+	cd backend && ./tools/golangci-lint run --fix
+
 frontend/build:
 	make frontend
 
@@ -188,3 +191,7 @@ i18n:
 .PHONY: helm-template-test
 helm-template-test:
 	charts/headlamp/tests/test.sh
+
+.PHONY: helm-update-template-version
+helm-update-template-version:
+	charts/headlamp/tests/update-version.sh

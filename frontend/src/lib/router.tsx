@@ -1,3 +1,19 @@
+/*
+ * Copyright 2025 The Kubernetes Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 import React, { ReactNode } from 'react';
 import { generatePath, useHistory } from 'react-router';
 import NotFoundComponent from '../components/404';
@@ -91,16 +107,17 @@ import ValidatingWebhookConfigurationDetails from '../components/webhookconfigur
 import ValidatingWebhookConfigurationList from '../components/webhookconfiguration/ValidatingWebhookConfigList';
 import WorkloadDetails from '../components/workload/Details';
 import WorkloadOverview from '../components/workload/Overview';
-import helpers from '../helpers';
+import { isElectron } from '../helpers/isElectron';
 import LocaleSelect from '../i18n/LocaleSelect/LocaleSelect';
 import store from '../redux/stores/store';
+import { getClusterPathParam } from './cluster';
 import { useCluster } from './k8s';
 import DaemonSet from './k8s/daemonSet';
 import Deployment from './k8s/deployment';
 import Job from './k8s/job';
 import ReplicaSet from './k8s/replicaSet';
 import StatefulSet from './k8s/statefulSet';
-import { getCluster, getClusterPrefixedPath } from './util';
+import { getClusterPrefixedPath } from './util';
 
 export interface Route {
   /** Any valid URL path or array of paths that path-to-regexp@^1.7.0 understands. */
@@ -846,7 +863,7 @@ const defaultRoutes: {
     exact: true,
     name: 'PortForwards',
     sidebar: 'portforwards',
-    disabled: !helpers.isElectron(),
+    disabled: !isElectron(),
     component: () => <PortForwardingList />,
   },
   loadKubeConfig: {
@@ -856,7 +873,7 @@ const defaultRoutes: {
     sidebar: null,
     useClusterURL: false,
     noAuthRequired: true,
-    disabled: !helpers.isElectron(),
+    disabled: !isElectron(),
     component: () => <KubeConfigLoader />,
   },
   addCluster: {
@@ -869,7 +886,7 @@ const defaultRoutes: {
     },
     useClusterURL: false,
     noAuthRequired: true,
-    disabled: !helpers.isElectron(),
+    disabled: !isElectron(),
     component: () => <AddCluster open onChoice={() => {}} />,
   },
   map: {
@@ -939,6 +956,12 @@ export function getRoutePath(route: Route) {
 }
 
 export interface RouteURLProps {
+  /**
+   * Selected clusters path parameter
+   *
+   * Check out {@link getClusterPathParam} and {@link formatClusterPathParam} function
+   * for working with this parameter
+   */
   cluster?: string;
   [prop: string]: any;
 }
@@ -971,14 +994,15 @@ export function createRouteURL(routeName: string, params: RouteURLProps = {}) {
     return '';
   }
 
-  let cluster: string | null = params.cluster || null;
+  let cluster = params.cluster;
   if (!cluster && getRouteUseClusterURL(route)) {
-    cluster = getCluster();
+    cluster = getClusterPathParam();
     if (!cluster) {
       return '/';
     }
   }
   const fullParams = {
+    selected: undefined,
     ...params,
   };
 
