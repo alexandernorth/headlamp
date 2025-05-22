@@ -15,18 +15,16 @@
  */
 
 import { Icon, InlineIcon } from '@iconify/react';
-import {
-  Box,
-  Chip,
-  FormControl,
-  IconButton,
-  InputLabel,
-  MenuItem,
-  Select,
-  TextField,
-  Typography,
-} from '@mui/material';
+import Box from '@mui/material/Box';
+import Chip from '@mui/material/Chip';
+import FormControl from '@mui/material/FormControl';
+import IconButton from '@mui/material/IconButton';
+import InputLabel from '@mui/material/InputLabel';
+import MenuItem from '@mui/material/MenuItem';
+import Select from '@mui/material/Select';
 import { useTheme } from '@mui/material/styles';
+import TextField from '@mui/material/TextField';
+import Typography from '@mui/material/Typography';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch } from 'react-redux';
@@ -41,9 +39,12 @@ import { useCluster, useClustersConf } from '../../../lib/k8s';
 import { deleteCluster, parseKubeConfig, renameCluster } from '../../../lib/k8s/apiProxy';
 import { setConfig, setStatelessConfig } from '../../../redux/configSlice';
 import { findKubeconfigByClusterName, updateStatelessClusterKubeconfig } from '../../../stateless/';
-import { Link, Loader, NameValueTable, SectionBox } from '../../common';
 import ConfirmButton from '../../common/ConfirmButton';
 import Empty from '../../common/EmptyContent';
+import Link from '../../common/Link';
+import Loader from '../../common/Loader';
+import NameValueTable from '../../common/NameValueTable';
+import SectionBox from '../../common/SectionBox';
 import NodeShellSettings from './NodeShellSettings';
 import { isValidNamespaceFormat } from './util';
 
