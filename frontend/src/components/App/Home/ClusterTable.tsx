@@ -15,8 +15,9 @@
  */
 
 import { Icon } from '@iconify/react';
-import { Button, useTheme } from '@mui/material';
 import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
+import { useTheme } from '@mui/material/styles';
 import Typography from '@mui/material/Typography';
 import { useTranslation } from 'react-i18next';
 import { generatePath, useHistory } from 'react-router-dom';
@@ -25,7 +26,8 @@ import { useClustersConf, useClustersVersion } from '../../../lib/k8s';
 import { ApiError } from '../../../lib/k8s/apiProxy';
 import { Cluster } from '../../../lib/k8s/cluster';
 import { getClusterPrefixedPath } from '../../../lib/util';
-import { Link, Table } from '../../common';
+import Link from '../../common/Link';
+import Table from '../../common/Table';
 import ClusterContextMenu from './ClusterContextMenu';
 import { MULTI_HOME_ENABLED } from './config';
 import { getCustomClusterNames } from './customClusterNames';
